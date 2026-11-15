@@ -1,0 +1,8 @@
+{
+  "name": "协作新闻组附件的跨帖分段与字节校验采集",
+  "probe": "/groups/repair/overview",
+  "identityFields": [
+    "fileSet",
+    "message"
+  ]
+}
