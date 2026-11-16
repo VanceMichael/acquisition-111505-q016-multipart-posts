@@ -1,16 +1,30 @@
 import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
 import { Archive } from './archive.mjs';
-import { receiveManual } from './intake.mjs';
+import { configuration, receiveManual } from './intake.mjs';
+import { collect } from './collect.mjs';
+
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 
 export async function createIntake(directory) {
   const archive = await new Archive(directory).initialize();
   return createServer(async (incoming, outgoing) => {
     const reply = (status, body) => { outgoing.writeHead(status, { 'content-type': 'application/json; charset=utf-8' }); outgoing.end(JSON.stringify(body)); };
     try {
-      if (incoming.method === 'GET' && incoming.url === '/health') return reply(200, { status: 'ok', acquisition: 'manual' });
+      if (incoming.method === 'GET' && incoming.url === '/health') return reply(200, { status: 'ok', acquisition: ['manual', 'collect'] });
       if (incoming.method === 'GET' && incoming.url === '/api/records') return reply(200, await archive.list());
-      if (incoming.method === 'POST' && incoming.url === '/api/collect') return reply(501, { error: '当前仅支持人工收件，尚无自动来源接入' });
+      if (incoming.method === 'POST' && incoming.url === '/api/collect') {
+        const chunks = []; let length = 0;
+        for await (const chunk of incoming) { length += chunk.length; if (length > 65536) return reply(413, { error: '采集请求过大' }); chunks.push(chunk); }
+        let options = {};
+        if (chunks.length) { try { options = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return reply(400, { error: 'JSON 无效' }); } }
+        if (!options || typeof options !== 'object' || Array.isArray(options)) return reply(400, { error: '采集选项应是对象' });
+        const source = options.source ?? process.env.SOURCE_URL ?? 'http://127.0.0.1:4200';
+        let parsed; try { parsed = new URL(source); } catch { return reply(400, { error: '来源地址无效' }); }
+        if (parsed.protocol !== 'http:' || !LOCAL_HOSTS.has(parsed.hostname)) return reply(403, { error: '仅允许读取本地授权来源' });
+        try { return reply(200, await collect({ archive, source: parsed.href, probe: configuration.probe })); }
+        catch (error) { return reply(502, { error: `自动采集失败：${error.message}` }); }
+      }
       if (incoming.method === 'POST' && incoming.url === '/api/manual') {
         const chunks = []; let length = 0;
         for await (const chunk of incoming) { length += chunk.length; if (length > 1048576) return reply(413, { error: '单份人工收件过大' }); chunks.push(chunk); }

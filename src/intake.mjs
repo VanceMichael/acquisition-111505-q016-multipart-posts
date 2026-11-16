@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { digest } from './archive.mjs';
 
-const configuration = JSON.parse(await readFile(new URL('../fixtures/project.json', import.meta.url), 'utf8'));
+export const configuration = JSON.parse(await readFile(new URL('../fixtures/project.json', import.meta.url), 'utf8'));
 export function manualRecord(payload) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('人工收件应是对象');
   for (const field of configuration.identityFields) {
